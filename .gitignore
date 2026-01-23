@@ -26,3 +26,4 @@ Thumbs.db
 # 调试文件
 *.dSYM/
 core
+_codeql*
