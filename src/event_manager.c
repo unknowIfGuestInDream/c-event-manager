@@ -482,7 +482,11 @@ em_error_t em_process_one(em_handle_t handle)
     
     lock_manager(handle);
     
-    /* 按优先级顺序处理(HIGH -> NORMAL -> LOW) */
+    /* 
+     * 按优先级顺序处理(HIGH -> NORMAL -> LOW)
+     * 注意: 此处依赖于优先级枚举值按升序排列:
+     * EM_PRIORITY_HIGH=0, EM_PRIORITY_NORMAL=1, EM_PRIORITY_LOW=2
+     */
     for (int i = 0; i < EM_PRIORITY_COUNT; i++) {
         if (handle->async_queues[i].count > 0) {
             result = dequeue_event(&handle->async_queues[i], &event, &data_copy);
