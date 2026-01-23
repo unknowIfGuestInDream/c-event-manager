@@ -1,0 +1,28 @@
+# 构建产物
+build/
+*.o
+*.a
+*.so
+*.dylib
+
+# 可执行文件
+basic_example
+priority_example
+async_example
+multithread_example
+test_event_manager
+
+# 编辑器
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 调试文件
+*.dSYM/
+core
