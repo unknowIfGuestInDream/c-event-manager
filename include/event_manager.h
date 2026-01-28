@@ -56,8 +56,8 @@ extern "C" {
 
 /** 是否启用 epoll 优化 (1=启用, 0=禁用) 
  *  仅在 Linux 系统上有效，需要 EM_ENABLE_THREADING=1
- *  启用后，事件循环将使用 epoll + eventfd 替代 pthread 条件变量
- *  这可以显著提高高并发场景下的性能
+ *  启用后，事件循环将使用 epoll + eventfd 作为补充通知机制，
+ *  可以提高事件循环在空闲时的唤醒效率
  */
 #ifndef EM_ENABLE_EPOLL
 #ifdef __linux__

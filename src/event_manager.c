@@ -142,7 +142,9 @@ static inline void signal_manager(em_handle_t handle) {
         if (handle->epoll_initialized) {
             uint64_t val = 1;
             ssize_t ret = write(handle->event_fd, &val, sizeof(val));
-            (void)ret;  /* 忽略写入错误 */
+            if (ret < 0) {
+                EM_DEBUG("eventfd write failed");
+            }
         }
 #endif
         pthread_cond_signal(&handle->cond);
@@ -291,11 +293,11 @@ em_error_t em_destroy(em_handle_t handle)
     unlock_manager(handle);
     
 #if EM_USE_EPOLL
-    /* 清理 epoll 资源 */
+    /* 清理 epoll 资源 - 先设置标志位防止其他线程使用 */
     if (handle->epoll_initialized) {
+        handle->epoll_initialized = false;
         close(handle->event_fd);
         close(handle->epoll_fd);
-        handle->epoll_initialized = false;
         EM_DEBUG("epoll resources cleaned up");
     }
 #endif
@@ -653,8 +655,11 @@ em_error_t em_run_loop(em_handle_t handle)
                 /* 清空 eventfd 的计数器 */
                 uint64_t val;
                 ssize_t ret = read(handle->event_fd, &val, sizeof(val));
-                (void)ret;  /* 忽略读取错误 */
-                EM_DEBUG("epoll woke up, eventfd val=%lu", (unsigned long)val);
+                if (ret > 0) {
+                    EM_DEBUG("epoll woke up, eventfd val=%lu", (unsigned long)val);
+                } else if (ret < 0) {
+                    EM_DEBUG("eventfd read failed");
+                }
             }
         }
     }

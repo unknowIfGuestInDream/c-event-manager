@@ -104,8 +104,8 @@ int main() {
 
 ### epoll 优化
 
-在 Linux 系统上，可以启用 epoll 来优化事件循环的性能。epoll 使用 `eventfd` 进行高效的事件通知，
-相比传统的 pthread 条件变量，在高并发场景下可以显著提高性能。
+在 Linux 系统上，可以启用 epoll 来优化事件循环的性能。epoll 使用 `eventfd` 作为补充通知机制，
+可以提高事件循环在空闲时的唤醒效率。
 
 **启用条件：**
 - 仅在 Linux 系统上可用
