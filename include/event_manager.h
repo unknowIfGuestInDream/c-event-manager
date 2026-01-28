@@ -54,6 +54,19 @@ extern "C" {
 #define EM_ENABLE_DEBUG         0
 #endif
 
+/** 是否启用 epoll 优化 (1=启用, 0=禁用) 
+ *  仅在 Linux 系统上有效，需要 EM_ENABLE_THREADING=1
+ *  启用后，事件循环将使用 epoll + eventfd 作为补充通知机制，
+ *  可以提高事件循环在空闲时的唤醒效率
+ */
+#ifndef EM_ENABLE_EPOLL
+#ifdef __linux__
+#define EM_ENABLE_EPOLL         0
+#else
+#define EM_ENABLE_EPOLL         0
+#endif
+#endif
+
 /*============================================================================
  *                              类型定义
  *============================================================================*/

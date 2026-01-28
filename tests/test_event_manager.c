@@ -7,10 +7,12 @@
  * 编译: gcc -o test_event_manager test_event_manager.c ../src/event_manager.c -I../include -lpthread
  */
 
+#define _POSIX_C_SOURCE 199309L  /* for nanosleep */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
 #include "event_manager.h"
 
 /*============================================================================
@@ -626,6 +628,73 @@ void test_version(void)
 }
 
 /*============================================================================
+ *                              事件循环测试
+ *============================================================================*/
+
+#if EM_ENABLE_THREADING
+#include <pthread.h>
+
+static em_handle_t loop_test_em = NULL;
+static volatile int loop_callback_count = 0;
+
+static void loop_callback(em_event_id_t id, em_event_data_t data, void* user)
+{
+    (void)id; (void)data; (void)user;
+    loop_callback_count++;
+}
+
+static void* event_loop_thread(void* arg)
+{
+    em_handle_t em = (em_handle_t)arg;
+    em_run_loop(em);
+    return NULL;
+}
+
+void test_event_loop_basic(void)
+{
+    TEST_START("事件循环基本功能");
+    
+    loop_test_em = em_create();
+    ASSERT_NOT_NULL(loop_test_em, "创建失败");
+    
+    loop_callback_count = 0;
+    em_subscribe(loop_test_em, 0, loop_callback, NULL, EM_PRIORITY_NORMAL);
+    
+    /* 在另一个线程中运行事件循环 */
+    pthread_t thread;
+    int ret = pthread_create(&thread, NULL, event_loop_thread, loop_test_em);
+    ASSERT_EQ(ret, 0, "创建线程失败");
+    
+    /* 等待一小段时间让事件循环启动 */
+    struct timespec ts = {0, 50000000};  /* 50ms */
+    nanosleep(&ts, NULL);
+    
+    /* 发布异步事件 */
+    for (int i = 0; i < 5; i++) {
+        em_publish_async(loop_test_em, 0, NULL, 0, EM_PRIORITY_NORMAL);
+    }
+    
+    /* 等待事件被处理 */
+    ts.tv_nsec = 200000000;  /* 200ms */
+    nanosleep(&ts, NULL);
+    
+    /* 停止事件循环 */
+    em_stop_loop(loop_test_em);
+    
+    /* 等待线程结束 */
+    pthread_join(thread, NULL);
+    
+    /* 验证所有事件都被处理 */
+    ASSERT_EQ(loop_callback_count, 5, "回调执行次数不正确");
+    
+    em_destroy(loop_test_em);
+    loop_test_em = NULL;
+    
+    TEST_PASS();
+}
+#endif
+
+/*============================================================================
  *                              主函数
  *============================================================================*/
 
@@ -675,6 +744,11 @@ int main(void)
     test_has_subscribers();
     test_error_string();
     test_version();
+    
+    /* 事件循环 */
+#if EM_ENABLE_THREADING
+    test_event_loop_basic();
+#endif
     
     /* 结果汇总 */
     printf("\n=== 测试结果 ===\n");

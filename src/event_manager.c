@@ -17,6 +17,20 @@
 #include <pthread.h>
 #endif
 
+/* epoll 支持 (仅 Linux) */
+#if EM_ENABLE_EPOLL && EM_ENABLE_THREADING
+#ifdef __linux__
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
+#include <unistd.h>
+#define EM_USE_EPOLL 1
+#else
+#define EM_USE_EPOLL 0
+#endif
+#else
+#define EM_USE_EPOLL 0
+#endif
+
 /*============================================================================
  *                              版本信息
  *============================================================================*/
@@ -90,6 +104,13 @@ struct em_manager {
     pthread_cond_t          cond;
     bool                    mutex_initialized;
 #endif
+
+    /* epoll 支持 */
+#if EM_USE_EPOLL
+    int                     epoll_fd;       /**< epoll 文件描述符 */
+    int                     event_fd;       /**< eventfd 用于通知 */
+    bool                    epoll_initialized;
+#endif
 };
 
 /*============================================================================
@@ -116,6 +137,16 @@ static inline void unlock_manager(em_handle_t handle) {
 
 static inline void signal_manager(em_handle_t handle) {
     if (handle && handle->mutex_initialized) {
+#if EM_USE_EPOLL
+        /* 使用 eventfd 通知 epoll */
+        if (handle->epoll_initialized) {
+            uint64_t val = 1;
+            ssize_t ret = write(handle->event_fd, &val, sizeof(val));
+            if (ret < 0) {
+                EM_DEBUG("eventfd write failed");
+            }
+        }
+#endif
         pthread_cond_signal(&handle->cond);
     }
 }
@@ -183,6 +214,51 @@ em_handle_t em_create(void)
     handle->mutex_initialized = true;
 #endif
     
+    /* 初始化 epoll */
+#if EM_USE_EPOLL
+    handle->epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (handle->epoll_fd < 0) {
+        EM_DEBUG("Failed to create epoll fd");
+#if EM_ENABLE_THREADING
+        pthread_mutex_destroy(&handle->mutex);
+        pthread_cond_destroy(&handle->cond);
+#endif
+        free(handle);
+        return NULL;
+    }
+    
+    handle->event_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (handle->event_fd < 0) {
+        EM_DEBUG("Failed to create eventfd");
+        close(handle->epoll_fd);
+#if EM_ENABLE_THREADING
+        pthread_mutex_destroy(&handle->mutex);
+        pthread_cond_destroy(&handle->cond);
+#endif
+        free(handle);
+        return NULL;
+    }
+    
+    /* 将 eventfd 添加到 epoll */
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = handle->event_fd;
+    if (epoll_ctl(handle->epoll_fd, EPOLL_CTL_ADD, handle->event_fd, &ev) < 0) {
+        EM_DEBUG("Failed to add eventfd to epoll");
+        close(handle->event_fd);
+        close(handle->epoll_fd);
+#if EM_ENABLE_THREADING
+        pthread_mutex_destroy(&handle->mutex);
+        pthread_cond_destroy(&handle->cond);
+#endif
+        free(handle);
+        return NULL;
+    }
+    
+    handle->epoll_initialized = true;
+    EM_DEBUG("epoll initialized (epoll_fd=%d, event_fd=%d)", handle->epoll_fd, handle->event_fd);
+#endif
+    
     handle->running = false;
     
     EM_DEBUG("Event manager created successfully");
@@ -215,6 +291,16 @@ em_error_t em_destroy(em_handle_t handle)
     }
     
     unlock_manager(handle);
+    
+#if EM_USE_EPOLL
+    /* 清理 epoll 资源 - 先设置标志位防止其他线程使用 */
+    if (handle->epoll_initialized) {
+        handle->epoll_initialized = false;
+        close(handle->event_fd);
+        close(handle->epoll_fd);
+        EM_DEBUG("epoll resources cleaned up");
+    }
+#endif
     
 #if EM_ENABLE_THREADING
     if (handle->mutex_initialized) {
@@ -541,6 +627,44 @@ em_error_t em_run_loop(em_handle_t handle)
     
     EM_DEBUG("Event loop started");
     
+#if EM_USE_EPOLL
+    /* 使用 epoll 的事件循环 */
+    struct epoll_event events[1];
+    
+    while (handle->running) {
+        lock_manager(handle);
+        
+        /* 检查是否有待处理的事件 */
+        bool has_events = false;
+        for (int i = 0; i < EM_PRIORITY_COUNT; i++) {
+            if (handle->async_queues[i].count > 0) {
+                has_events = true;
+                break;
+            }
+        }
+        
+        unlock_manager(handle);
+        
+        if (has_events) {
+            /* 处理所有待处理的事件 */
+            em_process_all(handle);
+        } else if (handle->running && handle->epoll_initialized) {
+            /* 使用 epoll 等待新事件，超时 100ms */
+            int nfds = epoll_wait(handle->epoll_fd, events, 1, 100);
+            if (nfds > 0) {
+                /* 清空 eventfd 的计数器 */
+                uint64_t val;
+                ssize_t ret = read(handle->event_fd, &val, sizeof(val));
+                if (ret > 0) {
+                    EM_DEBUG("epoll woke up, eventfd val=%lu", (unsigned long)val);
+                } else if (ret < 0) {
+                    EM_DEBUG("eventfd read failed");
+                }
+            }
+        }
+    }
+#else
+    /* 原始的条件变量事件循环 */
     while (handle->running) {
         lock_manager(handle);
         
@@ -565,6 +689,7 @@ em_error_t em_run_loop(em_handle_t handle)
         /* 处理所有待处理的事件 */
         em_process_all(handle);
     }
+#endif
     
     EM_DEBUG("Event loop stopped");
     return EM_OK;

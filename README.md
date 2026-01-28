@@ -100,6 +100,21 @@ int main() {
 | `EM_ASYNC_QUEUE_SIZE` | 32 | 异步事件队列大小 |
 | `EM_ENABLE_THREADING` | 1 | 是否启用多线程支持 |
 | `EM_ENABLE_DEBUG` | 0 | 是否启用调试日志 |
+| `EM_ENABLE_EPOLL` | 0 | 是否启用 epoll 优化(仅 Linux) |
+
+### epoll 优化
+
+在 Linux 系统上，可以启用 epoll 来优化事件循环的性能。epoll 使用 `eventfd` 作为补充通知机制，
+可以提高事件循环在空闲时的唤醒效率。
+
+**启用条件：**
+- 仅在 Linux 系统上可用
+- 需要同时启用 `EM_ENABLE_THREADING=1`
+
+**使用方式：**
+```bash
+gcc -DEM_ENABLE_EPOLL=1 -DEM_ENABLE_THREADING=1 ...
+```
 
 示例:
 ```bash
