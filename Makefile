@@ -107,6 +107,12 @@ debug: clean all
 release: CFLAGS = $(RELEASE_CFLAGS)
 release: clean all
 
+# epoll优化版本(仅Linux)
+EPOLL_CFLAGS = -Wall -Wextra -std=c11 -I$(INC_DIR) -DEM_ENABLE_EPOLL=1
+.PHONY: epoll
+epoll: CFLAGS = $(EPOLL_CFLAGS)
+epoll: clean all
+
 # 清理
 .PHONY: clean
 clean:
@@ -139,6 +145,7 @@ help:
 	@echo "  run-examples - 构建并运行所有示例"
 	@echo "  debug        - 调试版本(带调试符号和日志)"
 	@echo "  release      - 发布版本(优化)"
+	@echo "  epoll        - epoll优化版本(仅Linux)"
 	@echo "  clean        - 清理构建文件"
 	@echo "  install      - 安装到系统目录"
 	@echo "  uninstall    - 从系统目录卸载"
